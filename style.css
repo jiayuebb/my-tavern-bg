@@ -2,7 +2,7 @@
 #my-bg-avatar-layer {
     position: fixed;
     inset: -40px;
-    z-index: 5;                /* 高于常见主题场景层的 3，低于 UI 的 100+ */
+    z-index: 5;                /* 高于背景场景层，低于UI */
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.25s ease;
@@ -23,21 +23,17 @@
     display: block;
 }
 
-/* ---------- 跟随头像时：把所有已知原生背景层全部藏掉 ---------- */
-
-/* 1. 原生背景元素 */
+/* ---------- 跟随头像时：隐藏所有原生背景层 ---------- */
 body.my-bg-following #bg1,
 body.my-bg-following #bg_custom,
 body.my-bg-following #bg {
     visibility: hidden !important;
 }
 
-/* 2. softlight 主题自己的全屏场景层（如果有） */
 body.my-bg-following #softlight-scene-v1 {
     visibility: hidden !important;
 }
 
-/* 3. body 伪元素 —— 美化主题最常用的全屏背景/光效层 */
 body.my-bg-following::before,
 body.my-bg-following::after {
     opacity: 0 !important;
@@ -45,24 +41,31 @@ body.my-bg-following::after {
     background-image: none !important;
 }
 
-/* 4. 聊天主容器及其伪元素 */
+/* ---------- 核心修复：清除聊天框的黑色底板 ---------- */
+body.my-bg-following #backgrounds,
 body.my-bg-following #sheld,
 body.my-bg-following #chat,
-body.my-bg-following #backgrounds {
+body.my-bg-following #chat_background,
+body.my-bg-following #form_sheld,
+body.my-bg-following #send_form,
+body.my-bg-following #chat .mes,
+body.my-bg-following #chat .mes_block,
+body.my-bg-following #chat .mes_text {
     background-color: transparent !important;
     background-image: none !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
 }
 
+/* 连伪元素生成的黑底/毛玻璃也一起干掉 */
 body.my-bg-following #sheld::before,
 body.my-bg-following #sheld::after,
 body.my-bg-following #chat::before,
 body.my-bg-following #chat::after,
 body.my-bg-following #backgrounds::before,
 body.my-bg-following #backgrounds::after {
-    opacity: 0 !important;
+    display: none !important;
     background: none !important;
     background-image: none !important;
-    display: none !important;
 }
