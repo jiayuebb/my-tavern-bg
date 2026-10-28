@@ -90,3 +90,19 @@
     font-size: 12px;
     cursor: pointer;
 }
+
+/* ---------- 新增：头像覆盖层 ---------- */
+#my-bg-avatar-layer {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    pointer-events: none;
+    display: none;
+    z-index: 100;
+}
+
+#my-bg-avatar-layer.active {
+    display: block;
+}
