@@ -141,7 +141,7 @@
                 <input type="checkbox" id="my-bg-follow" ${followCharAvatar ? 'checked' : ''}>
                 背景跟随角色头像
             </label>
-            <div id="my-bg-debug" style="font-size:10px;opacity:.6;margin-top:8px;word-break:break-all;"></div>
+            <div id="my-bg-debug" style="font-size:10px;opacity:.6;margin-top:8px;word-break:break-all;line-height:1.4;"></div>
         `;
         document.body.appendChild(panel);
 
@@ -198,6 +198,9 @@
         panel.style.left = left + 'px';
         panel.style.top = top + 'px';
         panel.style.visibility = 'visible';
+
+        // 打开时刷新一次 debug 信息
+        updateDebug();
     }
 
     function closePanel() {
@@ -207,7 +210,7 @@
         if (ball) ball.style.display = 'flex';
     }
 
-    // ---------- 头像图层（用 img，加载失败自动换候选 URL） ----------
+    // ---------- 头像图层 ----------
     function createAvatarLayer() {
         let layer = document.getElementById(AVATAR_LAYER_ID);
         if (!layer) {
@@ -247,48 +250,104 @@
         }
     }
 
-    // ---------- 收集头像 URL 候选（优先用页面上已渲染的） ----------
-    function getAvatarCandidates(char) {
-        const list = [];
+    // ---------- getContext 安全获取 ----------
+    function getContextSafe() {
         try {
-            const img = document.querySelector('#chat .mes[is_user="false"] .avatar img, #chat .mes[is_user="false"] .mesAvatarWrapper img');
-            if (img && img.src && !img.src.startsWith('data:')) list.push(img.src);
+            if (typeof getContext === 'function') return getContext();
         } catch (e) {}
         try {
-            const selected = document.querySelector('#rm_print_characters_block .character_select.selected img, #rm_print_characters_block .character_select .avatar img');
-            if (selected && selected.src) list.push(selected.src);
-        } catch (e) {}
-        if (char && char.avatar) {
-            const file = encodeURIComponent(char.avatar);
-            list.push(new URL('characters/' + file, document.baseURI).href);
-            list.push(new URL('thumbnail?type=avatar&file=' + file, document.baseURI).href);
-        }
-        return [...new Set(list.filter(Boolean))];
-    }
-
-    // ---------- 当前角色 ----------
-    function getCurrentCharacter() {
-        try {
-            const ctx = typeof getContext === 'function' ? getContext() : null;
-            if (ctx) {
-                const id = ctx.this_chid;
-                const chars = ctx.characters;
-                if (chars && id !== undefined && id !== null && id !== 'none' && chars[id]) return chars[id];
-                if (Array.isArray(chars)) {
-                    const found = chars.find(c => c && c.avatar && String(c.avatar) === String(id));
-                    if (found) return found;
-                }
+            if (window.SillyTavern && typeof window.SillyTavern.getContext === 'function') {
+                return window.SillyTavern.getContext();
             }
-        } catch (e) {}
-        try {
-            const id = window.this_chid;
-            const chars = window.characters;
-            if (chars && id !== undefined && id !== null && id !== 'none' && chars[id]) return chars[id];
         } catch (e) {}
         return null;
     }
 
-    // ---------- 滤镜（style 标签 + !important） ----------
+    // ---------- 当前角色 ----------
+    function getCurrentCharacter() {
+        const ctx = getContextSafe();
+        if (ctx && Array.isArray(ctx.characters)) {
+            // 新版用 characterId，旧版用 this_chid
+            let id = ctx.characterId;
+            if (id === undefined || id === null) id = ctx.this_chid;
+            if (id !== undefined && id !== null && id !== 'none' && id !== -1 && id !== '') {
+                const c = ctx.characters[id];
+                if (c && c.avatar) return c;
+            }
+        }
+        try {
+            if (window.characters && Array.isArray(window.characters)) {
+                const id = window.this_chid;
+                if (id !== undefined && id !== null && id !== 'none' && id !== -1 && id !== '') {
+                    const c = window.characters[id];
+                    if (c && c.avatar) return c;
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    // ---------- 从 DOM 直接抓当前头像 URL（兜底，不依赖角色对象） ----------
+    function getAvatarUrlsFromDom() {
+        const urls = [];
+
+        // 1. 最新一条 AI 消息的头像
+        try {
+            const msgs = document.querySelectorAll(
+                '#chat .mes[is_user="false"] .avatar img, #chat .mes[is_user="false"] .mesAvatarWrapper img, #chat .mes[is_user="false"] img.avatar'
+            );
+            for (let i = msgs.length - 1; i >= 0; i--) {
+                const src = msgs[i].currentSrc || msgs[i].src;
+                if (src && src.startsWith('http')) { urls.push(src); break; }
+            }
+        } catch (e) {}
+
+        // 2. 右侧角色选择器里选中的角色
+        try {
+            const sel = document.querySelector(
+                '#rm_print_characters_block .character_select.selected img, #rm_print_characters_block .character_select .avatar img'
+            );
+            if (sel && (sel.currentSrc || sel.src) && (sel.currentSrc || sel.src).startsWith('http')) {
+                urls.push(sel.currentSrc || sel.src);
+            }
+        } catch (e) {}
+
+        // 3. 某些主题/版本在顶部或侧边显示当前角色头像
+        try {
+            const alt = document.querySelector('#avatar_div img, #rm_button_selected_ch img, #character_avatar img');
+            if (alt && (alt.currentSrc || alt.src) && (alt.currentSrc || alt.src).startsWith('http')) {
+                urls.push(alt.currentSrc || alt.src);
+            }
+        } catch (e) {}
+
+        return [...new Set(urls)];
+    }
+
+    // ---------- 统一解析当前头像 ----------
+    function resolveCurrentAvatar() {
+        const char = getCurrentCharacter();
+        if (char && char.avatar) {
+            const file = encodeURIComponent(char.avatar);
+            const base = document.baseURI;
+            const list = [
+                new URL('characters/' + file, base).href,
+                new URL('thumbnail?type=avatar&file=' + file, base).href,
+            ];
+            // DOM 里已有的 URL 作为额外候选（最可靠，因为它一定加载过）
+            const domUrls = getAvatarUrlsFromDom();
+            for (const u of domUrls) if (!list.includes(u)) list.push(u);
+            return { key: 'card:' + char.avatar, name: char.name || '当前角色', candidates: list, source: 'card' };
+        }
+
+        const domUrls = getAvatarUrlsFromDom();
+        if (domUrls.length) {
+            return { key: 'dom:' + domUrls[0], name: '当前角色', candidates: domUrls, source: 'dom' };
+        }
+
+        return null;
+    }
+
+    // ---------- 滤镜 ----------
     function ensureFilterStyle() {
         if (filterStyleEl && filterStyleEl.isConnected) return filterStyleEl;
         filterStyleEl = document.getElementById(FILTER_STYLE_ID);
@@ -327,43 +386,75 @@
             return;
         }
 
-        const char = getCurrentCharacter();
-        const shouldFollow = !!(followCharAvatar && char && char.avatar);
-
-        if (!shouldFollow) {
+        if (!followCharAvatar) {
             layer.classList.remove('active');
             document.body.classList.remove(BODY_FOLLOWING_CLASS);
             lastAvatarKey = '';
-            console.log(LOG, 'follow off or no character', { followCharAvatar, char: char ? char.name : null });
             updateDebug();
             applyFilter();
             return;
         }
 
-        const avatarKey = String(char.avatar);
+        const resolved = resolveCurrentAvatar();
+        if (!resolved) {
+            layer.classList.remove('active');
+            document.body.classList.remove(BODY_FOLLOWING_CLASS);
+            lastAvatarKey = '';
+            console.warn(LOG, 'resolve failed: no char, no dom avatar');
+            updateDebug();
+            applyFilter();
+            return;
+        }
+
         document.body.classList.add(BODY_FOLLOWING_CLASS);
         layer.classList.add('active');
 
-        if (force || avatarKey !== lastAvatarKey) {
-            lastAvatarKey = avatarKey;
-            candidates = getAvatarCandidates(char);
+        if (force || resolved.key !== lastAvatarKey) {
+            lastAvatarKey = resolved.key;
+            candidates = resolved.candidates;
             candidateIndex = 0;
-            console.log(LOG, 'following:', char.name, candidates);
-            if (candidates.length) avatarImg.src = candidates[0];
-            else console.warn(LOG, 'no avatar candidates');
+            console.log(LOG, 'resolve:', resolved.source, resolved.name, candidates);
+            avatarImg.src = candidates[0];
         }
 
         updateDebug();
         applyFilter();
     }
 
+    // ---------- Debug 显示 ----------
     function updateDebug() {
         const el = document.getElementById('my-bg-debug');
         if (!el) return;
         if (!followCharAvatar) { el.textContent = ''; return; }
+
+        const ctx = getContextSafe();
         const char = getCurrentCharacter();
-        el.textContent = '角色: ' + (char ? char.name : '未识别') +
-            ' | 头像: ' + (avatarImg && avatarImg.src ? avatarImg.src.split('/').slice(-1)[0] : '无');
+        const parts = [];
+
+        // 角色识别结果
+        if (char) {
+            parts.push('角色: ' + (char.name || '?'));
+        } else if (ctx) {
+            parts.push('角色: null (ctx有, chars=' + (Array.isArray(ctx.characters) ? ctx.characters.length : '?') +
+                ', id=' + (ctx.characterId !== undefined ? ctx.characterId : ctx.this_chid) + ')');
+        } else {
+            parts.push('角色: null (ctx无)');
+        }
+
+        // 头像
+        if (avatarImg && avatarImg.src && avatarImg.naturalWidth > 0) {
+            parts.push('头像: ' + decodeURIComponent(avatarImg.src.split('/').pop().split('?')[0]));
+        } else if (avatarImg && avatarImg.src) {
+            parts.push('头像: 加载中/失败');
+        } else {
+            parts.push('头像: 无');
+        }
+
+        // DOM 候选数
+        const domCount = getAvatarUrlsFromDom().length;
+        parts.push('DOM候选: ' + domCount);
+
+        el.textContent = parts.join(' | ');
     }
 
     // ---------- 角色切换监听 ----------
@@ -405,7 +496,7 @@
         let t = null;
         window.addEventListener('resize', function () {
             clearTimeout(t);
-            t = setTimeout(function () { applyFilter(); }, 200);
+            t = setTimeout(function () { applyFilter(); updateDebug(); }, 200);
         });
     }
 })();
