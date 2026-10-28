@@ -91,18 +91,27 @@
     cursor: pointer;
 }
 
-/* ---------- 新增：头像覆盖层 ---------- */
+/* ---------- 头像图层 ---------- */
 #my-bg-avatar-layer {
-    position: absolute;
-    inset: 0;
+    position: fixed;
+    inset: -40px;              /* 比视口大一圈，模糊边缘不会露白 */
     background-size: cover;
     background-position: center center;
     background-repeat: no-repeat;
     pointer-events: none;
-    display: none;
-    z-index: 100;
+    z-index: 1;                /* 在原生背景之上、主 UI 之下 */
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    will-change: filter, opacity;
 }
 
 #my-bg-avatar-layer.active {
-    display: block;
+    opacity: 1;
+}
+
+/* ---------- 跟随头像时隐藏原生背景 ---------- */
+body.my-bg-following #bg1,
+body.my-bg-following #bg_custom,
+body.my-bg-following #bg {
+    visibility: hidden !important;
 }
