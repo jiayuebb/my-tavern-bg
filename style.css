@@ -2,40 +2,39 @@
     position: fixed;
     top: 80px;
     right: 30px;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: grab;
     z-index: 99999;
     user-select: none;
-    font-size: 20px;
-    /* 主题适配核心：全部使用 ST 的变量 */
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
     background-color: var(--SmartThemeBlurTintColor, #2a2a3a);
     color: var(--SmartThemeBodyColor, #e0e0e0);
     border: 1px solid var(--SmartThemeBorderColor, #555);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-    /* 自身也带一点毛玻璃感，和酒馆风格统一 */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     transition: transform 0.1s ease;
 }
 
 #my-bg-ball:active {
     cursor: grabbing;
-    transform: scale(0.95);
+    transform: scale(0.92);
 }
 
 #my-bg-panel {
     position: fixed;
-    top: 135px;
-    right: 30px;
-    width: 180px;
-    padding: 14px;
+    width: 200px;
+    padding: 12px;
     border-radius: 12px;
     z-index: 99998;
-    display: none; /* 默认隐藏，点击悬浮球才显示 */
+    display: none;
+    box-sizing: border-box;
     background-color: var(--SmartThemeBlurTintColor, #2a2a3a);
     color: var(--SmartThemeBodyColor, #e0e0e0);
     border: 1px solid var(--SmartThemeBorderColor, #555);
@@ -47,6 +46,47 @@
     display: block;
 }
 
+.my-bg-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#my-bg-close {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    border-radius: 4px;
+}
+
+#my-bg-close:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.my-bg-label {
+    font-size: 12px;
+    display: block;
+    margin-bottom: 4px;
+    margin-top: 8px;
+}
+
 #my-bg-panel input[type="range"] {
+    width: 100%;
     accent-color: var(--SmartThemeBodyColor, #e0e0e0);
+}
+
+.my-bg-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    font-size: 12px;
+    cursor: pointer;
 }
