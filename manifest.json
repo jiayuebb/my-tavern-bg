@@ -1,0 +1,8 @@
+{
+  "display_name": "我的背景调节器",
+  "name": "my-background-controller",
+  "version": "1.0.0",
+  "author": "jiayuebb",
+  "js": "index.js",
+  "css": "style.css"
+}
