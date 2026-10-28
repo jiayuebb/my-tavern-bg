@@ -142,7 +142,7 @@
                 <input type="checkbox" id="my-bg-follow" ${followCharAvatar ? 'checked' : ''}>
                 背景跟随角色头像
             </label>
-            <div id="my-bg-debug" style="font-size:10px;opacity:.6;margin-top:8px;word-break:break-all;line-height:1.4;"></div>
+            <div id="my-bg-debug" style="font-size:10px;opacity:.65;margin-top:8px;word-break:break-all;line-height:1.4;"></div>
         `;
         document.body.appendChild(panel);
 
@@ -210,7 +210,7 @@
         if (ball) ball.style.display = 'flex';
     }
 
-    // ---------- 头像图层：放到 body 顶层 ----------
+    // ---------- 头像图层 ----------
     function createAvatarLayer() {
         let layer = document.getElementById(AVATAR_LAYER_ID);
         if (!layer) {
@@ -357,7 +357,43 @@
         }
     }
 
-    // ---------- 扫描并透明化遮挡层 ----------
+    // ---------- 扫描覆盖层 ----------
+    function listCoveringLayers() {
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const result = [];
+
+        function visit(el, depth) {
+            if (!el || depth > 5 || el.nodeType !== 1) return;
+            if (el.id === AVATAR_LAYER_ID || el.id === BALL_ID || el.id === PANEL_ID) return;
+            if (el.closest && (el.closest('#' + AVATAR_LAYER_ID) || el.closest('#' + BALL_ID) || el.closest('#' + PANEL_ID))) return;
+            const tag = el.tagName;
+            if (tag === 'IMG' || tag === 'VIDEO' || tag === 'CANVAS' || tag === 'SVG' || tag === 'IFRAME') return;
+
+            const rect = el.getBoundingClientRect();
+            if (rect.width < vw * 0.5 || rect.height < vh * 0.3) return;
+            if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= vw || rect.top >= vh) return;
+
+            const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return;
+
+            const bg = s.backgroundColor;
+            const bgImg = s.backgroundImage;
+            const hasOpaqueBg = (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') || (bgImg && bgImg !== 'none');
+
+            if (hasOpaqueBg) {
+                const z = s.zIndex !== 'auto' ? ' z=' + s.zIndex : '';
+                const desc = (el.id ? '#' + el.id : el.tagName.toLowerCase()) +
+                    (typeof el.className === 'string' && el.className ? '.' + el.className.split(' ').filter(Boolean)[0] : '') + z;
+                result.push({ el, desc });
+            }
+
+            for (const child of el.children) visit(child, depth + 1);
+        }
+
+        for (const el of document.body.children) visit(el, 0);
+        return result;
+    }
+
     function ensureTransparentStyle() {
         let el = document.getElementById(TRANSPARENT_STYLE_ID);
         if (!el) {
@@ -376,66 +412,34 @@
 
     function scanAndTransparentize() {
         const styleEl = ensureTransparentStyle();
-        const following = document.body.classList.contains(BODY_FOLLOWING_CLASS);
-
-        if (!following) {
+        if (!document.body.classList.contains(BODY_FOLLOWING_CLASS)) {
             styleEl.textContent = '';
             clearOpaqueMarks();
             return;
         }
 
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
+        const hits = listCoveringLayers();
+        hits.forEach(function (item) { item.el.setAttribute(TRANSPARENT_ATTR, '1'); });
 
-        // 收集候选：body 直接子元素、#sheld 及一层子元素、#backgrounds 兄弟
-        const targets = new Set();
-        const add = function (el) {
-            if (!el) return;
-            if (el.id === AVATAR_LAYER_ID || el.id === BALL_ID || el.id === PANEL_ID) return;
-            if (el.closest && (el.closest('#' + AVATAR_LAYER_ID) || el.closest('#' + BALL_ID) || el.closest('#' + PANEL_ID))) return;
-            targets.add(el);
-        };
-
-        for (const el of document.body.children) add(el);
-        const sheld = document.getElementById('sheld');
-        if (sheld) {
-            add(sheld);
-            for (const el of sheld.children) add(el);
-        }
-        const chat = document.getElementById('chat');
-        if (chat) {
-            add(chat);
-            for (const el of chat.children) add(el);
-        }
-
-        const hit = [];
-        for (const el of targets) {
-            if (el === document.getElementById(AVATAR_LAYER_ID)) continue;
-            const rect = el.getBoundingClientRect();
-            // 只处理覆盖视口大范围的元素
-            if (rect.width < vw * 0.7 || rect.height < vh * 0.5) continue;
-            if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= vw || rect.top >= vh) continue;
-            const s = getComputedStyle(el);
-            if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') continue;
-            const bg = s.backgroundColor;
-            const bgImg = s.backgroundImage;
-            const isOpaque = (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') ||
-                             (bgImg && bgImg !== 'none');
-            if (!isOpaque) continue;
-            hit.push(el);
-        }
-
-        hit.forEach(function (el) { el.setAttribute(TRANSPARENT_ATTR, '1'); });
-
-        if (hit.length > 0) {
-            styleEl.textContent = `[${TRANSPARENT_ATTR}] { background-color: transparent !important; background-image: none !important; }`;
+        if (hits.length > 0) {
+            styleEl.textContent = `
+                [${TRANSPARENT_ATTR}] {
+                    background-color: transparent !important;
+                    background-image: none !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                }
+                [${TRANSPARENT_ATTR}] img,
+                [${TRANSPARENT_ATTR}] video,
+                [${TRANSPARENT_ATTR}] canvas {
+                    opacity: 0 !important;
+                }
+            `;
         } else {
             styleEl.textContent = '';
         }
 
-        console.log(LOG, 'transparentized', hit.length, 'layer(s)',
-            hit.map(function (el) { return (el.id ? '#' + el.id : '') + (el.className ? '.' + String(el.className).split(' ').filter(Boolean)[0] : ''); })
-        );
+        console.log(LOG, 'transparentized', hits.length, hits.map(function (h) { return h.desc; }));
     }
 
     // ---------- 应用状态 ----------
@@ -479,7 +483,6 @@
             avatarImg.src = candidates[0];
         }
 
-        // 头像加载后、透明化遮挡层
         scanAndTransparentize();
         applyFilter();
         updateDebug();
@@ -490,18 +493,9 @@
         if (!el) return;
         if (!followCharAvatar) { el.textContent = ''; return; }
 
-        const ctx = getContextSafe();
-        const char = getCurrentCharacter();
         const parts = [];
-
-        if (char) {
-            parts.push('角色: ' + (char.name || '?'));
-        } else if (ctx) {
-            parts.push('角色: null (ctx有, chars=' + (Array.isArray(ctx.characters) ? ctx.characters.length : '?') +
-                ', id=' + (ctx.characterId !== undefined ? ctx.characterId : ctx.this_chid) + ')');
-        } else {
-            parts.push('角色: null (ctx无)');
-        }
+        const char = getCurrentCharacter();
+        parts.push(char ? ('角色: ' + (char.name || '?')) : '角色: null');
 
         if (avatarImg && avatarImg.src && avatarImg.naturalWidth > 0) {
             parts.push('头像: ' + decodeURIComponent(avatarImg.src.split('/').pop().split('?')[0]));
@@ -511,9 +505,14 @@
             parts.push('头像: 无');
         }
 
-        const domCount = getAvatarUrlsFromDom().length;
-        parts.push('DOM候选: ' + domCount);
-        parts.push('透明化: ' + document.querySelectorAll('[' + TRANSPARENT_ATTR + ']').length + ' 层');
+        const covering = listCoveringLayers();
+        parts.push('覆盖层: ' + covering.length);
+        if (covering.length > 0) {
+            parts.push('(' + covering.slice(0, 4).map(function (c) { return c.desc; }).join(', ') + ')');
+        }
+
+        const marked = document.querySelectorAll('[' + TRANSPARENT_ATTR + ']');
+        parts.push('已透明化: ' + marked.length);
 
         el.textContent = parts.join(' | ');
     }
