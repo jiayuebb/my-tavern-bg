@@ -94,22 +94,30 @@
 /* ---------- 头像图层 ---------- */
 #my-bg-avatar-layer {
     position: fixed;
-    inset: -40px;              /* 比视口大一圈，模糊边缘不会露白 */
-    background-size: cover;
-    background-position: center center;
-    background-repeat: no-repeat;
+    inset: -40px;
+    z-index: 1;
     pointer-events: none;
-    z-index: 1;                /* 在原生背景之上、主 UI 之下 */
     opacity: 0;
     transition: opacity 0.25s ease;
-    will-change: filter, opacity;
+    overflow: hidden;
+    display: none;
 }
 
 #my-bg-avatar-layer.active {
+    display: block;
     opacity: 1;
 }
 
-/* ---------- 跟随头像时隐藏原生背景 ---------- */
+#my-bg-avatar-layer img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+    display: block;
+}
+
+/* ---------- 跟随头像时隐藏原生背景（覆盖 #backgrounds 内除自己以外的所有层） ---------- */
+body.my-bg-following #backgrounds > :not(#my-bg-avatar-layer),
 body.my-bg-following #bg1,
 body.my-bg-following #bg_custom,
 body.my-bg-following #bg {
