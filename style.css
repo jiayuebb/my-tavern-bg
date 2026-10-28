@@ -91,11 +91,11 @@
     cursor: pointer;
 }
 
-/* ---------- 头像图层 ---------- */
+/* ---------- 头像图层：放在 body 顶层 ---------- */
 #my-bg-avatar-layer {
     position: fixed;
     inset: -40px;
-    z-index: 1;
+    z-index: 3;
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.25s ease;
@@ -116,10 +116,16 @@
     display: block;
 }
 
-/* ---------- 跟随头像时隐藏原生背景（覆盖 #backgrounds 内除自己以外的所有层） ---------- */
-body.my-bg-following #backgrounds > :not(#my-bg-avatar-layer),
+/* ---------- 跟随头像时隐藏原生背景元素 ---------- */
 body.my-bg-following #bg1,
 body.my-bg-following #bg_custom,
 body.my-bg-following #bg {
     visibility: hidden !important;
+}
+
+/* 兜底：常见聊天容器背景透明化（即使 JS 扫描漏了，也不至于完全挡住） */
+body.my-bg-following #sheld,
+body.my-bg-following #chat {
+    background-color: transparent !important;
+    background-image: none !important;
 }
