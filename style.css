@@ -26,10 +26,7 @@
 /* ---------- 跟随头像时：隐藏所有原生背景层 ---------- */
 body.my-bg-following #bg1,
 body.my-bg-following #bg_custom,
-body.my-bg-following #bg {
-    visibility: hidden !important;
-}
-
+body.my-bg-following #bg,
 body.my-bg-following #softlight-scene-v1 {
     visibility: hidden !important;
 }
@@ -41,16 +38,25 @@ body.my-bg-following::after {
     background-image: none !important;
 }
 
-/* ---------- 核心修复：清除聊天框的黑色底板 ---------- */
-body.my-bg-following #backgrounds,
+/* ========================================================= */
+/* ---------- 核心修复：干掉角色聊天页面容器（#sheld） ---------- */
+/* ========================================================= */
+
+/* 1. 釜底抽薪：强制把酒馆的主题背景变量变透明 */
+body.my-bg-following {
+    --SmartThemeBlurTintColor: transparent !important;
+    --SmartThemeChatTintColor: transparent !important;
+    --SmartThemeUserMesBlurTintColor: transparent !important;
+    --SmartThemeBotMesBlurTintColor: transparent !important;
+}
+
+/* 2. 强制扒光 #sheld（聊天主容器）和 #chat 的背景 */
 body.my-bg-following #sheld,
 body.my-bg-following #chat,
-body.my-bg-following #chat_background,
-body.my-bg-following #form_sheld,
-body.my-bg-following #send_form,
-body.my-bg-following #chat .mes,
-body.my-bg-following #chat .mes_block,
-body.my-bg-following #chat .mes_text {
+body.my-bg-following #chat > div,
+body.my-bg-following .mes,
+body.my-bg-following .mes_block,
+body.my-bg-following .mes_text {
     background-color: transparent !important;
     background-image: none !important;
     backdrop-filter: none !important;
@@ -58,13 +64,11 @@ body.my-bg-following #chat .mes_text {
     box-shadow: none !important;
 }
 
-/* 连伪元素生成的黑底/毛玻璃也一起干掉 */
+/* 3. 如果容器是用伪元素（::before/::after）画的黑底，也一并干掉 */
 body.my-bg-following #sheld::before,
 body.my-bg-following #sheld::after,
 body.my-bg-following #chat::before,
-body.my-bg-following #chat::after,
-body.my-bg-following #backgrounds::before,
-body.my-bg-following #backgrounds::after {
+body.my-bg-following #chat::after {
     display: none !important;
     background: none !important;
     background-image: none !important;
