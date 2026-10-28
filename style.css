@@ -1,101 +1,8 @@
-#my-bg-ball {
-    position: fixed;
-    top: 80px;
-    right: 30px;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: grab;
-    z-index: 99999;
-    user-select: none;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    background-color: var(--SmartThemeBlurTintColor, #2a2a3a);
-    color: var(--SmartThemeBodyColor, #e0e0e0);
-    border: 1px solid var(--SmartThemeBorderColor, #555);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-    transition: transform 0.1s ease;
-}
-
-#my-bg-ball:active {
-    cursor: grabbing;
-    transform: scale(0.92);
-}
-
-#my-bg-panel {
-    position: fixed;
-    width: 200px;
-    padding: 12px;
-    border-radius: 12px;
-    z-index: 99998;
-    display: none;
-    box-sizing: border-box;
-    background-color: var(--SmartThemeBlurTintColor, #2a2a3a);
-    color: var(--SmartThemeBodyColor, #e0e0e0);
-    border: 1px solid var(--SmartThemeBorderColor, #555);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
-}
-
-#my-bg-panel.show {
-    display: block;
-}
-
-.my-bg-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#my-bg-close {
-    background: transparent;
-    border: none;
-    color: inherit;
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 4px;
-    border-radius: 4px;
-}
-
-#my-bg-close:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-.my-bg-label {
-    font-size: 12px;
-    display: block;
-    margin-bottom: 4px;
-    margin-top: 8px;
-}
-
-#my-bg-panel input[type="range"] {
-    width: 100%;
-    accent-color: var(--SmartThemeBodyColor, #e0e0e0);
-}
-
-.my-bg-check {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 12px;
-    font-size: 12px;
-    cursor: pointer;
-}
-
-/* ---------- 头像图层：z-index 压到最底，靠透明化露出 ---------- */
+/* ---------- 头像图层 ---------- */
 #my-bg-avatar-layer {
     position: fixed;
     inset: -40px;
-    z-index: 1;
+    z-index: 5;                /* 高于常见主题场景层的 3，低于 UI 的 100+ */
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.25s ease;
@@ -116,14 +23,29 @@
     display: block;
 }
 
-/* ---------- 跟随头像时隐藏原生背景元素 ---------- */
+/* ---------- 跟随头像时：把所有已知原生背景层全部藏掉 ---------- */
+
+/* 1. 原生背景元素 */
 body.my-bg-following #bg1,
 body.my-bg-following #bg_custom,
 body.my-bg-following #bg {
     visibility: hidden !important;
 }
 
-/* ---------- 常见聊天容器背景 / 伪元素 / backdrop 全部透明化（兜底） ---------- */
+/* 2. softlight 主题自己的全屏场景层（如果有） */
+body.my-bg-following #softlight-scene-v1 {
+    visibility: hidden !important;
+}
+
+/* 3. body 伪元素 —— 美化主题最常用的全屏背景/光效层 */
+body.my-bg-following::before,
+body.my-bg-following::after {
+    opacity: 0 !important;
+    background: none !important;
+    background-image: none !important;
+}
+
+/* 4. 聊天主容器及其伪元素 */
 body.my-bg-following #sheld,
 body.my-bg-following #chat,
 body.my-bg-following #backgrounds {
@@ -139,11 +61,8 @@ body.my-bg-following #chat::before,
 body.my-bg-following #chat::after,
 body.my-bg-following #backgrounds::before,
 body.my-bg-following #backgrounds::after {
-    background: transparent !important;
+    opacity: 0 !important;
+    background: none !important;
     background-image: none !important;
-}
-
-/* softlight 美化专用的全屏场景层，如果存在就藏掉 */
-body.my-bg-following #softlight-scene-v1 {
-    visibility: hidden !important;
+    display: none !important;
 }
