@@ -5,7 +5,9 @@
     const PANEL_ID = 'my-bg-panel';
     const AVATAR_LAYER_ID = 'my-bg-avatar-layer';
     const FILTER_STYLE_ID = 'my-bg-filter-style';
+    const TRANSPARENT_STYLE_ID = 'my-bg-transparent-style';
     const BODY_FOLLOWING_CLASS = 'my-bg-following';
+    const TRANSPARENT_ATTR = 'data-my-bg-opaque';
     const STORAGE_KEY = 'my-bg-settings';
     const LOG = '[my-bg]';
 
@@ -32,7 +34,6 @@
         console.log(LOG, 'initialized');
     }
 
-    // ---------- 设置 ----------
     function loadSettings() {
         try {
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -199,7 +200,6 @@
         panel.style.top = top + 'px';
         panel.style.visibility = 'visible';
 
-        // 打开时刷新一次 debug 信息
         updateDebug();
     }
 
@@ -210,20 +210,14 @@
         if (ball) ball.style.display = 'flex';
     }
 
-    // ---------- 头像图层 ----------
+    // ---------- 头像图层：放到 body 顶层 ----------
     function createAvatarLayer() {
         let layer = document.getElementById(AVATAR_LAYER_ID);
         if (!layer) {
             layer = document.createElement('div');
             layer.id = AVATAR_LAYER_ID;
-            const backgrounds = document.getElementById('backgrounds');
-            if (backgrounds) {
-                backgrounds.appendChild(layer);
-                console.log(LOG, 'layer appended to #backgrounds');
-            } else {
-                document.body.appendChild(layer);
-                console.log(LOG, 'layer appended to body (no #backgrounds)');
-            }
+            document.body.appendChild(layer);
+            console.log(LOG, 'layer appended to body');
         }
 
         avatarImg = layer.querySelector('img');
@@ -250,7 +244,6 @@
         }
     }
 
-    // ---------- getContext 安全获取 ----------
     function getContextSafe() {
         try {
             if (typeof getContext === 'function') return getContext();
@@ -263,11 +256,9 @@
         return null;
     }
 
-    // ---------- 当前角色 ----------
     function getCurrentCharacter() {
         const ctx = getContextSafe();
         if (ctx && Array.isArray(ctx.characters)) {
-            // 新版用 characterId，旧版用 this_chid
             let id = ctx.characterId;
             if (id === undefined || id === null) id = ctx.this_chid;
             if (id !== undefined && id !== null && id !== 'none' && id !== -1 && id !== '') {
@@ -287,11 +278,8 @@
         return null;
     }
 
-    // ---------- 从 DOM 直接抓当前头像 URL（兜底，不依赖角色对象） ----------
     function getAvatarUrlsFromDom() {
         const urls = [];
-
-        // 1. 最新一条 AI 消息的头像
         try {
             const msgs = document.querySelectorAll(
                 '#chat .mes[is_user="false"] .avatar img, #chat .mes[is_user="false"] .mesAvatarWrapper img, #chat .mes[is_user="false"] img.avatar'
@@ -301,8 +289,6 @@
                 if (src && src.startsWith('http')) { urls.push(src); break; }
             }
         } catch (e) {}
-
-        // 2. 右侧角色选择器里选中的角色
         try {
             const sel = document.querySelector(
                 '#rm_print_characters_block .character_select.selected img, #rm_print_characters_block .character_select .avatar img'
@@ -311,19 +297,15 @@
                 urls.push(sel.currentSrc || sel.src);
             }
         } catch (e) {}
-
-        // 3. 某些主题/版本在顶部或侧边显示当前角色头像
         try {
             const alt = document.querySelector('#avatar_div img, #rm_button_selected_ch img, #character_avatar img');
             if (alt && (alt.currentSrc || alt.src) && (alt.currentSrc || alt.src).startsWith('http')) {
                 urls.push(alt.currentSrc || alt.src);
             }
         } catch (e) {}
-
         return [...new Set(urls)];
     }
 
-    // ---------- 统一解析当前头像 ----------
     function resolveCurrentAvatar() {
         const char = getCurrentCharacter();
         if (char && char.avatar) {
@@ -333,17 +315,14 @@
                 new URL('characters/' + file, base).href,
                 new URL('thumbnail?type=avatar&file=' + file, base).href,
             ];
-            // DOM 里已有的 URL 作为额外候选（最可靠，因为它一定加载过）
             const domUrls = getAvatarUrlsFromDom();
             for (const u of domUrls) if (!list.includes(u)) list.push(u);
             return { key: 'card:' + char.avatar, name: char.name || '当前角色', candidates: list, source: 'card' };
         }
-
         const domUrls = getAvatarUrlsFromDom();
         if (domUrls.length) {
             return { key: 'dom:' + domUrls[0], name: '当前角色', candidates: domUrls, source: 'dom' };
         }
-
         return null;
     }
 
@@ -378,6 +357,87 @@
         }
     }
 
+    // ---------- 扫描并透明化遮挡层 ----------
+    function ensureTransparentStyle() {
+        let el = document.getElementById(TRANSPARENT_STYLE_ID);
+        if (!el) {
+            el = document.createElement('style');
+            el.id = TRANSPARENT_STYLE_ID;
+            document.head.appendChild(el);
+        }
+        return el;
+    }
+
+    function clearOpaqueMarks() {
+        document.querySelectorAll('[' + TRANSPARENT_ATTR + ']').forEach(function (el) {
+            el.removeAttribute(TRANSPARENT_ATTR);
+        });
+    }
+
+    function scanAndTransparentize() {
+        const styleEl = ensureTransparentStyle();
+        const following = document.body.classList.contains(BODY_FOLLOWING_CLASS);
+
+        if (!following) {
+            styleEl.textContent = '';
+            clearOpaqueMarks();
+            return;
+        }
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        // 收集候选：body 直接子元素、#sheld 及一层子元素、#backgrounds 兄弟
+        const targets = new Set();
+        const add = function (el) {
+            if (!el) return;
+            if (el.id === AVATAR_LAYER_ID || el.id === BALL_ID || el.id === PANEL_ID) return;
+            if (el.closest && (el.closest('#' + AVATAR_LAYER_ID) || el.closest('#' + BALL_ID) || el.closest('#' + PANEL_ID))) return;
+            targets.add(el);
+        };
+
+        for (const el of document.body.children) add(el);
+        const sheld = document.getElementById('sheld');
+        if (sheld) {
+            add(sheld);
+            for (const el of sheld.children) add(el);
+        }
+        const chat = document.getElementById('chat');
+        if (chat) {
+            add(chat);
+            for (const el of chat.children) add(el);
+        }
+
+        const hit = [];
+        for (const el of targets) {
+            if (el === document.getElementById(AVATAR_LAYER_ID)) continue;
+            const rect = el.getBoundingClientRect();
+            // 只处理覆盖视口大范围的元素
+            if (rect.width < vw * 0.7 || rect.height < vh * 0.5) continue;
+            if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= vw || rect.top >= vh) continue;
+            const s = getComputedStyle(el);
+            if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') continue;
+            const bg = s.backgroundColor;
+            const bgImg = s.backgroundImage;
+            const isOpaque = (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') ||
+                             (bgImg && bgImg !== 'none');
+            if (!isOpaque) continue;
+            hit.push(el);
+        }
+
+        hit.forEach(function (el) { el.setAttribute(TRANSPARENT_ATTR, '1'); });
+
+        if (hit.length > 0) {
+            styleEl.textContent = `[${TRANSPARENT_ATTR}] { background-color: transparent !important; background-image: none !important; }`;
+        } else {
+            styleEl.textContent = '';
+        }
+
+        console.log(LOG, 'transparentized', hit.length, 'layer(s)',
+            hit.map(function (el) { return (el.id ? '#' + el.id : '') + (el.className ? '.' + String(el.className).split(' ').filter(Boolean)[0] : ''); })
+        );
+    }
+
     // ---------- 应用状态 ----------
     function applyState(force) {
         const layer = document.getElementById(AVATAR_LAYER_ID);
@@ -390,8 +450,9 @@
             layer.classList.remove('active');
             document.body.classList.remove(BODY_FOLLOWING_CLASS);
             lastAvatarKey = '';
-            updateDebug();
+            scanAndTransparentize();
             applyFilter();
+            updateDebug();
             return;
         }
 
@@ -401,8 +462,9 @@
             document.body.classList.remove(BODY_FOLLOWING_CLASS);
             lastAvatarKey = '';
             console.warn(LOG, 'resolve failed: no char, no dom avatar');
-            updateDebug();
+            scanAndTransparentize();
             applyFilter();
+            updateDebug();
             return;
         }
 
@@ -417,11 +479,12 @@
             avatarImg.src = candidates[0];
         }
 
-        updateDebug();
+        // 头像加载后、透明化遮挡层
+        scanAndTransparentize();
         applyFilter();
+        updateDebug();
     }
 
-    // ---------- Debug 显示 ----------
     function updateDebug() {
         const el = document.getElementById('my-bg-debug');
         if (!el) return;
@@ -431,7 +494,6 @@
         const char = getCurrentCharacter();
         const parts = [];
 
-        // 角色识别结果
         if (char) {
             parts.push('角色: ' + (char.name || '?'));
         } else if (ctx) {
@@ -441,7 +503,6 @@
             parts.push('角色: null (ctx无)');
         }
 
-        // 头像
         if (avatarImg && avatarImg.src && avatarImg.naturalWidth > 0) {
             parts.push('头像: ' + decodeURIComponent(avatarImg.src.split('/').pop().split('?')[0]));
         } else if (avatarImg && avatarImg.src) {
@@ -450,9 +511,9 @@
             parts.push('头像: 无');
         }
 
-        // DOM 候选数
         const domCount = getAvatarUrlsFromDom().length;
         parts.push('DOM候选: ' + domCount);
+        parts.push('透明化: ' + document.querySelectorAll('[' + TRANSPARENT_ATTR + ']').length + ' 层');
 
         el.textContent = parts.join(' | ');
     }
@@ -496,7 +557,11 @@
         let t = null;
         window.addEventListener('resize', function () {
             clearTimeout(t);
-            t = setTimeout(function () { applyFilter(); updateDebug(); }, 200);
+            t = setTimeout(function () {
+                applyFilter();
+                scanAndTransparentize();
+                updateDebug();
+            }, 200);
         });
     }
 })();
