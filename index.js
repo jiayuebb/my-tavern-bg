@@ -7,12 +7,16 @@
     const FILTER_STYLE_ID = 'my-bg-filter-style';
     const BODY_FOLLOWING_CLASS = 'my-bg-following';
     const STORAGE_KEY = 'my-bg-settings';
+    const LOG = '[my-bg]';
 
     let blurValue = 0;
     let brightnessValue = 100;
     let followCharAvatar = false;
     let lastAvatarKey = '';
     let filterStyleEl = null;
+    let avatarImg = null;
+    let candidates = [];
+    let candidateIndex = 0;
 
     setTimeout(init, 2000);
 
@@ -25,9 +29,10 @@
         setupCharWatcher();
         applyState(true);
         setupResizeGuard();
+        console.log(LOG, 'initialized');
     }
 
-    // ---------- 设置读写 ----------
+    // ---------- 设置 ----------
     function loadSettings() {
         try {
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -136,6 +141,7 @@
                 <input type="checkbox" id="my-bg-follow" ${followCharAvatar ? 'checked' : ''}>
                 背景跟随角色头像
             </label>
+            <div id="my-bg-debug" style="font-size:10px;opacity:.6;margin-top:8px;word-break:break-all;"></div>
         `;
         document.body.appendChild(panel);
 
@@ -201,26 +207,88 @@
         if (ball) ball.style.display = 'flex';
     }
 
-    // ---------- 头像图层 ----------
+    // ---------- 头像图层（用 img，加载失败自动换候选 URL） ----------
     function createAvatarLayer() {
-        if (document.getElementById(AVATAR_LAYER_ID)) return;
-        const layer = document.createElement('div');
-        layer.id = AVATAR_LAYER_ID;
-        document.body.appendChild(layer);
-    }
-
-    // ---------- 原生背景元素 ----------
-    function getNativeBgEls() {
-        const ids = ['bg1', 'bg_custom', 'bg'];
-        const els = [];
-        for (const id of ids) {
-            const el = document.getElementById(id);
-            if (el && !els.includes(el)) els.push(el);
+        let layer = document.getElementById(AVATAR_LAYER_ID);
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.id = AVATAR_LAYER_ID;
+            const backgrounds = document.getElementById('backgrounds');
+            if (backgrounds) {
+                backgrounds.appendChild(layer);
+                console.log(LOG, 'layer appended to #backgrounds');
+            } else {
+                document.body.appendChild(layer);
+                console.log(LOG, 'layer appended to body (no #backgrounds)');
+            }
         }
-        return els;
+
+        avatarImg = layer.querySelector('img');
+        if (!avatarImg) {
+            avatarImg = document.createElement('img');
+            avatarImg.alt = '';
+            avatarImg.decoding = 'async';
+            avatarImg.addEventListener('load', function () {
+                console.log(LOG, 'avatar loaded:', avatarImg.src);
+                updateDebug();
+            });
+            avatarImg.addEventListener('error', function () {
+                console.warn(LOG, 'avatar failed:', avatarImg.src);
+                candidateIndex++;
+                if (candidateIndex < candidates.length) {
+                    console.log(LOG, 'trying fallback:', candidates[candidateIndex]);
+                    avatarImg.src = candidates[candidateIndex];
+                } else {
+                    console.error(LOG, 'all avatar candidates failed');
+                }
+                updateDebug();
+            });
+            layer.appendChild(avatarImg);
+        }
     }
 
-    // ---------- 滤镜样式（用 style 标签 + !important，防止被 ST 重设） ----------
+    // ---------- 收集头像 URL 候选（优先用页面上已渲染的） ----------
+    function getAvatarCandidates(char) {
+        const list = [];
+        try {
+            const img = document.querySelector('#chat .mes[is_user="false"] .avatar img, #chat .mes[is_user="false"] .mesAvatarWrapper img');
+            if (img && img.src && !img.src.startsWith('data:')) list.push(img.src);
+        } catch (e) {}
+        try {
+            const selected = document.querySelector('#rm_print_characters_block .character_select.selected img, #rm_print_characters_block .character_select .avatar img');
+            if (selected && selected.src) list.push(selected.src);
+        } catch (e) {}
+        if (char && char.avatar) {
+            const file = encodeURIComponent(char.avatar);
+            list.push(new URL('characters/' + file, document.baseURI).href);
+            list.push(new URL('thumbnail?type=avatar&file=' + file, document.baseURI).href);
+        }
+        return [...new Set(list.filter(Boolean))];
+    }
+
+    // ---------- 当前角色 ----------
+    function getCurrentCharacter() {
+        try {
+            const ctx = typeof getContext === 'function' ? getContext() : null;
+            if (ctx) {
+                const id = ctx.this_chid;
+                const chars = ctx.characters;
+                if (chars && id !== undefined && id !== null && id !== 'none' && chars[id]) return chars[id];
+                if (Array.isArray(chars)) {
+                    const found = chars.find(c => c && c.avatar && String(c.avatar) === String(id));
+                    if (found) return found;
+                }
+            }
+        } catch (e) {}
+        try {
+            const id = window.this_chid;
+            const chars = window.characters;
+            if (chars && id !== undefined && id !== null && id !== 'none' && chars[id]) return chars[id];
+        } catch (e) {}
+        return null;
+    }
+
+    // ---------- 滤镜（style 标签 + !important） ----------
     function ensureFilterStyle() {
         if (filterStyleEl && filterStyleEl.isConnected) return filterStyleEl;
         filterStyleEl = document.getElementById(FILTER_STYLE_ID);
@@ -239,79 +307,69 @@
         const layer = document.getElementById(AVATAR_LAYER_ID);
 
         if (isFollowing) {
-            // 跟随头像时：滤镜作用在我们自己的图层上
-            if (layer) {
-                layer.style.setProperty('filter', filterStr, 'important');
-            }
+            if (layer) layer.style.setProperty('filter', filterStr, 'important');
             styleEl.textContent = '';
         } else {
-            // 普通模式：滤镜作用在原生背景上（用 CSS 规则，元素被替换也能自动生效）
             styleEl.textContent = `
                 #bg1, #bg_custom, #bg {
                     filter: ${filterStr} !important;
                 }
             `;
-            if (layer) {
-                layer.style.removeProperty('filter');
-            }
+            if (layer) layer.style.removeProperty('filter');
         }
     }
 
-    // ---------- 当前角色与头像 ----------
-    function getCurrentCharacter() {
-        try {
-            if (typeof getContext === 'function') {
-                const ctx = getContext();
-                if (ctx.characters && ctx.this_chid !== undefined && ctx.this_chid !== null && ctx.this_chid !== 'none') {
-                    return ctx.characters[ctx.this_chid];
-                }
-            }
-            if (window.characters && window.this_chid !== undefined && window.this_chid !== null && window.this_chid !== 'none') {
-                return window.characters[window.this_chid];
-            }
-        } catch (e) {}
-        return null;
-    }
-
-    function getAvatarUrl(char) {
-        if (!char || !char.avatar) return '';
-        return `/characters/${encodeURIComponent(char.avatar)}`;
-    }
-
-    // ---------- 应用整体状态 ----------
+    // ---------- 应用状态 ----------
     function applyState(force) {
         const layer = document.getElementById(AVATAR_LAYER_ID);
-        if (!layer) return;
-
-        const char = getCurrentCharacter();
-        const hasChar = !!(char && char.avatar);
-        const shouldFollow = followCharAvatar && hasChar;
-
-        if (shouldFollow) {
-            const avatarKey = String(char.avatar);
-            if (force || avatarKey !== lastAvatarKey) {
-                lastAvatarKey = avatarKey;
-                layer.style.backgroundImage = `url("${getAvatarUrl(char)}")`;
-            }
-            layer.classList.add('active');
-            document.body.classList.add(BODY_FOLLOWING_CLASS);
-        } else {
-            layer.classList.remove('active');
-            layer.style.removeProperty('background-image');
-            document.body.classList.remove(BODY_FOLLOWING_CLASS);
-            lastAvatarKey = '';
+        if (!layer || !avatarImg) {
+            console.warn(LOG, 'layer/img missing');
+            return;
         }
 
+        const char = getCurrentCharacter();
+        const shouldFollow = !!(followCharAvatar && char && char.avatar);
+
+        if (!shouldFollow) {
+            layer.classList.remove('active');
+            document.body.classList.remove(BODY_FOLLOWING_CLASS);
+            lastAvatarKey = '';
+            console.log(LOG, 'follow off or no character', { followCharAvatar, char: char ? char.name : null });
+            updateDebug();
+            applyFilter();
+            return;
+        }
+
+        const avatarKey = String(char.avatar);
+        document.body.classList.add(BODY_FOLLOWING_CLASS);
+        layer.classList.add('active');
+
+        if (force || avatarKey !== lastAvatarKey) {
+            lastAvatarKey = avatarKey;
+            candidates = getAvatarCandidates(char);
+            candidateIndex = 0;
+            console.log(LOG, 'following:', char.name, candidates);
+            if (candidates.length) avatarImg.src = candidates[0];
+            else console.warn(LOG, 'no avatar candidates');
+        }
+
+        updateDebug();
         applyFilter();
+    }
+
+    function updateDebug() {
+        const el = document.getElementById('my-bg-debug');
+        if (!el) return;
+        if (!followCharAvatar) { el.textContent = ''; return; }
+        const char = getCurrentCharacter();
+        el.textContent = '角色: ' + (char ? char.name : '未识别') +
+            ' | 头像: ' + (avatarImg && avatarImg.src ? avatarImg.src.split('/').slice(-1)[0] : '无');
     }
 
     // ---------- 角色切换监听 ----------
     function setupCharWatcher() {
         const handler = function () {
-            // 等 ST 自己渲染完再覆盖
-            setTimeout(function () {
-                applyState(true);
-            }, 300);
+            setTimeout(function () { applyState(true); }, 300);
         };
 
         try {
@@ -321,6 +379,7 @@
                     const t = ctx.eventTypes;
                     if (t.CHARACTER_SELECTED !== undefined) ctx.eventSource.on(t.CHARACTER_SELECTED, handler);
                     if (t.CHAT_CHANGED !== undefined) ctx.eventSource.on(t.CHAT_CHANGED, handler);
+                    console.log(LOG, 'event listener attached via getContext');
                     return;
                 }
             }
@@ -331,24 +390,22 @@
                 const t = window.event_types;
                 if (t.CHARACTER_SELECTED !== undefined) window.eventSource.on(t.CHARACTER_SELECTED, handler);
                 if (t.CHAT_CHANGED !== undefined) window.eventSource.on(t.CHAT_CHANGED, handler);
+                console.log(LOG, 'event listener attached via window');
                 return;
             }
         } catch (e) {}
 
-        // 兜底轮询：每 1.5 秒检查一次角色/跟随状态
+        console.log(LOG, 'no event source, using polling');
         setInterval(function () {
             if (followCharAvatar) applyState(false);
         }, 1500);
     }
 
-    // ---------- 窗口大小变化时，重新应用（防止某些主题重算背景） ----------
     function setupResizeGuard() {
         let t = null;
         window.addEventListener('resize', function () {
             clearTimeout(t);
-            t = setTimeout(function () {
-                applyFilter();
-            }, 200);
+            t = setTimeout(function () { applyFilter(); }, 200);
         });
     }
 })();
