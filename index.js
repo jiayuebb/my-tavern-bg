@@ -4,12 +4,15 @@
     const BALL_ID = 'my-bg-ball';
     const PANEL_ID = 'my-bg-panel';
     const AVATAR_LAYER_ID = 'my-bg-avatar-layer';
+    const FILTER_STYLE_ID = 'my-bg-filter-style';
+    const BODY_FOLLOWING_CLASS = 'my-bg-following';
     const STORAGE_KEY = 'my-bg-settings';
 
     let blurValue = 0;
     let brightnessValue = 100;
     let followCharAvatar = false;
     let lastAvatarKey = '';
+    let filterStyleEl = null;
 
     setTimeout(init, 2000);
 
@@ -18,11 +21,13 @@
         loadSettings();
         createBall();
         createPanel();
-        applyBgFilter();
-        if (followCharAvatar) applyCharBackground(true);
+        createAvatarLayer();
         setupCharWatcher();
+        applyState(true);
+        setupResizeGuard();
     }
 
+    // ---------- 设置读写 ----------
     function loadSettings() {
         try {
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -134,31 +139,23 @@
         `;
         document.body.appendChild(panel);
 
-        document.getElementById('my-bg-close').addEventListener('click', function () {
-            panel.classList.remove('show');
-            const ball = document.getElementById(BALL_ID);
-            if (ball) ball.style.display = 'flex';
-        });
+        document.getElementById('my-bg-close').addEventListener('click', closePanel);
 
         document.getElementById('my-bg-blur').addEventListener('input', function (e) {
             blurValue = Number(e.target.value);
-            applyBgFilter();
+            applyFilter();
             saveSettings();
         });
 
         document.getElementById('my-bg-bright').addEventListener('input', function (e) {
             brightnessValue = Number(e.target.value);
-            applyBgFilter();
+            applyFilter();
             saveSettings();
         });
 
         document.getElementById('my-bg-follow').addEventListener('change', function (e) {
             followCharAvatar = e.target.checked;
-            if (followCharAvatar) {
-                applyCharBackground(true);
-            } else {
-                hideAvatarLayer();
-            }
+            applyState(true);
             saveSettings();
         });
     }
@@ -197,60 +194,70 @@
         panel.style.visibility = 'visible';
     }
 
-    // ---------- 滤镜 ----------
-    function getBackgroundEls() {
+    function closePanel() {
+        const panel = document.getElementById(PANEL_ID);
+        const ball = document.getElementById(BALL_ID);
+        if (panel) panel.classList.remove('show');
+        if (ball) ball.style.display = 'flex';
+    }
+
+    // ---------- 头像图层 ----------
+    function createAvatarLayer() {
+        if (document.getElementById(AVATAR_LAYER_ID)) return;
+        const layer = document.createElement('div');
+        layer.id = AVATAR_LAYER_ID;
+        document.body.appendChild(layer);
+    }
+
+    // ---------- 原生背景元素 ----------
+    function getNativeBgEls() {
+        const ids = ['bg1', 'bg_custom', 'bg'];
         const els = [];
-        const seen = new Set();
-        ['bg1', 'bg_custom', 'bg'].forEach(id => {
+        for (const id of ids) {
             const el = document.getElementById(id);
-            if (el && !seen.has(el)) { els.push(el); seen.add(el); }
-        });
-        const container = document.getElementById('backgrounds');
-        if (container) {
-            container.querySelectorAll('div').forEach(el => {
-                if (el.id && el.id.toLowerCase().startsWith('bg') && el.id !== AVATAR_LAYER_ID && !seen.has(el)) {
-                    els.push(el);
-                    seen.add(el);
-                }
-            });
+            if (el && !els.includes(el)) els.push(el);
         }
         return els;
     }
 
-    function applyFilterToEl(el) {
-        if (!el) return;
-        el.style.filter = `blur(${blurValue}px) brightness(${brightnessValue / 100})`;
-        if (blurValue > 0) {
-            el.style.transform = `scale(${1 + blurValue / 150})`;
-            el.style.transformOrigin = 'center center';
-        } else {
-            el.style.transform = '';
-            el.style.transformOrigin = '';
+    // ---------- 滤镜样式（用 style 标签 + !important，防止被 ST 重设） ----------
+    function ensureFilterStyle() {
+        if (filterStyleEl && filterStyleEl.isConnected) return filterStyleEl;
+        filterStyleEl = document.getElementById(FILTER_STYLE_ID);
+        if (!filterStyleEl) {
+            filterStyleEl = document.createElement('style');
+            filterStyleEl.id = FILTER_STYLE_ID;
+            document.head.appendChild(filterStyleEl);
         }
+        return filterStyleEl;
     }
 
-    function applyBgFilter() {
-        getBackgroundEls().forEach(applyFilterToEl);
+    function applyFilter() {
+        const isFollowing = document.body.classList.contains(BODY_FOLLOWING_CLASS);
+        const filterStr = `blur(${blurValue}px) brightness(${brightnessValue / 100})`;
+        const styleEl = ensureFilterStyle();
         const layer = document.getElementById(AVATAR_LAYER_ID);
-        if (layer) applyFilterToEl(layer);
-    }
 
-    // ---------- 头像覆盖层（核心改动） ----------
-    function getOrCreateAvatarLayer() {
-        let layer = document.getElementById(AVATAR_LAYER_ID);
-        if (layer) return layer;
-        layer = document.createElement('div');
-        layer.id = AVATAR_LAYER_ID;
-        const backgrounds = document.getElementById('backgrounds');
-        if (backgrounds) {
-            backgrounds.appendChild(layer);
+        if (isFollowing) {
+            // 跟随头像时：滤镜作用在我们自己的图层上
+            if (layer) {
+                layer.style.setProperty('filter', filterStr, 'important');
+            }
+            styleEl.textContent = '';
         } else {
-            document.body.appendChild(layer);
-            layer.style.zIndex = '1';
+            // 普通模式：滤镜作用在原生背景上（用 CSS 规则，元素被替换也能自动生效）
+            styleEl.textContent = `
+                #bg1, #bg_custom, #bg {
+                    filter: ${filterStr} !important;
+                }
+            `;
+            if (layer) {
+                layer.style.removeProperty('filter');
+            }
         }
-        return layer;
     }
 
+    // ---------- 当前角色与头像 ----------
     function getCurrentCharacter() {
         try {
             if (typeof getContext === 'function') {
@@ -266,40 +273,47 @@
         return null;
     }
 
-    function applyCharBackground(force) {
-        if (!followCharAvatar) return;
-        const char = getCurrentCharacter();
-        if (!char || !char.avatar) {
-            hideAvatarLayer();
-            return;
-        }
-        const avatarKey = String(char.avatar);
-        if (!force && avatarKey === lastAvatarKey) return;
-        lastAvatarKey = avatarKey;
-
-        const layer = getOrCreateAvatarLayer();
-        const url = `/characters/${encodeURIComponent(char.avatar)}`;
-        layer.style.backgroundImage = `url("${url}")`;
-        layer.classList.add('active');
-        applyFilterToEl(layer);
+    function getAvatarUrl(char) {
+        if (!char || !char.avatar) return '';
+        return `/characters/${encodeURIComponent(char.avatar)}`;
     }
 
-    function hideAvatarLayer() {
+    // ---------- 应用整体状态 ----------
+    function applyState(force) {
         const layer = document.getElementById(AVATAR_LAYER_ID);
-        if (layer) {
+        if (!layer) return;
+
+        const char = getCurrentCharacter();
+        const hasChar = !!(char && char.avatar);
+        const shouldFollow = followCharAvatar && hasChar;
+
+        if (shouldFollow) {
+            const avatarKey = String(char.avatar);
+            if (force || avatarKey !== lastAvatarKey) {
+                lastAvatarKey = avatarKey;
+                layer.style.backgroundImage = `url("${getAvatarUrl(char)}")`;
+            }
+            layer.classList.add('active');
+            document.body.classList.add(BODY_FOLLOWING_CLASS);
+        } else {
             layer.classList.remove('active');
-            layer.style.backgroundImage = '';
+            layer.style.removeProperty('background-image');
+            document.body.classList.remove(BODY_FOLLOWING_CLASS);
+            lastAvatarKey = '';
         }
-        lastAvatarKey = '';
+
+        applyFilter();
     }
 
     // ---------- 角色切换监听 ----------
     function setupCharWatcher() {
         const handler = function () {
-            if (followCharAvatar) {
-                setTimeout(function () { applyCharBackground(true); }, 300);
-            }
+            // 等 ST 自己渲染完再覆盖
+            setTimeout(function () {
+                applyState(true);
+            }, 300);
         };
+
         try {
             if (typeof getContext === 'function') {
                 const ctx = getContext();
@@ -311,6 +325,7 @@
                 }
             }
         } catch (e) {}
+
         try {
             if (window.eventSource && window.event_types) {
                 const t = window.event_types;
@@ -319,11 +334,21 @@
                 return;
             }
         } catch (e) {}
+
+        // 兜底轮询：每 1.5 秒检查一次角色/跟随状态
         setInterval(function () {
-            if (!followCharAvatar) return;
-            const char = getCurrentCharacter();
-            const key = char && char.avatar ? String(char.avatar) : '';
-            if (key && key !== lastAvatarKey) applyCharBackground(true);
+            if (followCharAvatar) applyState(false);
         }, 1500);
+    }
+
+    // ---------- 窗口大小变化时，重新应用（防止某些主题重算背景） ----------
+    function setupResizeGuard() {
+        let t = null;
+        window.addEventListener('resize', function () {
+            clearTimeout(t);
+            t = setTimeout(function () {
+                applyFilter();
+            }, 200);
+        });
     }
 })();
