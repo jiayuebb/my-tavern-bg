@@ -3,28 +3,26 @@
 
     const BALL_ID = 'my-bg-ball';
     const PANEL_ID = 'my-bg-panel';
+    const AVATAR_LAYER_ID = 'my-bg-avatar-layer';
     const STORAGE_KEY = 'my-bg-settings';
 
     let blurValue = 0;
     let brightnessValue = 100;
     let followCharAvatar = false;
-    let originalBgImage = null;
-    let lastAvatarKey = ''; // 用于检测角色是否真的变了
+    let lastAvatarKey = '';
 
     setTimeout(init, 2000);
 
     function init() {
         if (document.getElementById(BALL_ID)) return;
-
         loadSettings();
         createBall();
         createPanel();
         applyBgFilter();
-        if (followCharAvatar) applyCharBackground();
+        if (followCharAvatar) applyCharBackground(true);
         setupCharWatcher();
     }
 
-    // ---------- 设置读写 ----------
     function loadSettings() {
         try {
             const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -159,7 +157,7 @@
             if (followCharAvatar) {
                 applyCharBackground(true);
             } else {
-                restoreOriginalBg();
+                hideAvatarLayer();
             }
             saveSettings();
         });
@@ -199,7 +197,7 @@
         panel.style.visibility = 'visible';
     }
 
-    // ---------- 背景滤镜 ----------
+    // ---------- 滤镜 ----------
     function getBackgroundEls() {
         const els = [];
         const seen = new Set();
@@ -210,7 +208,7 @@
         const container = document.getElementById('backgrounds');
         if (container) {
             container.querySelectorAll('div').forEach(el => {
-                if (el.id && el.id.toLowerCase().startsWith('bg') && !seen.has(el)) {
+                if (el.id && el.id.toLowerCase().startsWith('bg') && el.id !== AVATAR_LAYER_ID && !seen.has(el)) {
                     els.push(el);
                     seen.add(el);
                 }
@@ -219,44 +217,48 @@
         return els;
     }
 
-    function applyBgFilter() {
-        const els = getBackgroundEls();
-        const filter = `blur(${blurValue}px) brightness(${brightnessValue / 100})`;
-        const scale = blurValue > 0 ? (1 + blurValue / 150) : 1;
-        els.forEach(el => {
-            el.style.filter = filter;
-            if (blurValue > 0) {
-                el.style.transform = `scale(${scale})`;
-                el.style.transformOrigin = 'center center';
-            } else {
-                el.style.transform = '';
-                el.style.transformOrigin = '';
-            }
-        });
+    function applyFilterToEl(el) {
+        if (!el) return;
+        el.style.filter = `blur(${blurValue}px) brightness(${brightnessValue / 100})`;
+        if (blurValue > 0) {
+            el.style.transform = `scale(${1 + blurValue / 150})`;
+            el.style.transformOrigin = 'center center';
+        } else {
+            el.style.transform = '';
+            el.style.transformOrigin = '';
+        }
     }
 
-    // ---------- 角色头像背景（核心改动） ----------
-    function getVisibleBgEl() {
-        const els = getBackgroundEls();
-        for (const el of els) {
-            const s = getComputedStyle(el);
-            if (s.display !== 'none' && s.backgroundImage && s.backgroundImage !== 'none') {
-                return el;
-            }
+    function applyBgFilter() {
+        getBackgroundEls().forEach(applyFilterToEl);
+        const layer = document.getElementById(AVATAR_LAYER_ID);
+        if (layer) applyFilterToEl(layer);
+    }
+
+    // ---------- 头像覆盖层（核心改动） ----------
+    function getOrCreateAvatarLayer() {
+        let layer = document.getElementById(AVATAR_LAYER_ID);
+        if (layer) return layer;
+        layer = document.createElement('div');
+        layer.id = AVATAR_LAYER_ID;
+        const backgrounds = document.getElementById('backgrounds');
+        if (backgrounds) {
+            backgrounds.appendChild(layer);
+        } else {
+            document.body.appendChild(layer);
+            layer.style.zIndex = '1';
         }
-        return els[0] || null;
+        return layer;
     }
 
     function getCurrentCharacter() {
         try {
-            // 优先用 getContext
             if (typeof getContext === 'function') {
                 const ctx = getContext();
                 if (ctx.characters && ctx.this_chid !== undefined && ctx.this_chid !== null && ctx.this_chid !== 'none') {
                     return ctx.characters[ctx.this_chid];
                 }
             }
-            // 回退到全局变量
             if (window.characters && window.this_chid !== undefined && window.this_chid !== null && window.this_chid !== 'none') {
                 return window.characters[window.this_chid];
             }
@@ -265,52 +267,39 @@
     }
 
     function applyCharBackground(force) {
-        const el = getVisibleBgEl();
-        if (!el) return;
-
+        if (!followCharAvatar) return;
         const char = getCurrentCharacter();
         if (!char || !char.avatar) {
-            // 没有角色或没有头像，恢复原背景
-            if (originalBgImage !== null) restoreOriginalBg();
+            hideAvatarLayer();
             return;
         }
-
-        // 检测角色是否真的变化了，避免重复设置同一张图
         const avatarKey = String(char.avatar);
         if (!force && avatarKey === lastAvatarKey) return;
         lastAvatarKey = avatarKey;
 
-        // 记录原始背景（只在第一次开启时记录）
-        if (originalBgImage === null) {
-            originalBgImage = el.style.backgroundImage || getComputedStyle(el).backgroundImage || '';
-        }
-
+        const layer = getOrCreateAvatarLayer();
         const url = `/characters/${encodeURIComponent(char.avatar)}`;
-        el.style.backgroundImage = `url("${url}")`;
-        el.style.backgroundSize = 'cover';
-        el.style.backgroundPosition = 'center center';
+        layer.style.backgroundImage = `url("${url}")`;
+        layer.classList.add('active');
+        applyFilterToEl(layer);
     }
 
-    function restoreOriginalBg() {
-        const el = getVisibleBgEl();
-        if (!el) return;
-        if (originalBgImage !== null) {
-            el.style.backgroundImage = (originalBgImage && originalBgImage !== 'none') ? originalBgImage : '';
+    function hideAvatarLayer() {
+        const layer = document.getElementById(AVATAR_LAYER_ID);
+        if (layer) {
+            layer.classList.remove('active');
+            layer.style.backgroundImage = '';
         }
-        originalBgImage = null;
         lastAvatarKey = '';
     }
 
-    // ---------- 角色切换监听（核心改动） ----------
+    // ---------- 角色切换监听 ----------
     function setupCharWatcher() {
         const handler = function () {
             if (followCharAvatar) {
-                // 稍作延迟，等 ST 自己渲染完再覆盖
                 setTimeout(function () { applyCharBackground(true); }, 300);
             }
         };
-
-        // 方式 1：使用 getContext 的事件系统
         try {
             if (typeof getContext === 'function') {
                 const ctx = getContext();
@@ -322,8 +311,6 @@
                 }
             }
         } catch (e) {}
-
-        // 方式 2：回退到全局 eventSource / event_types
         try {
             if (window.eventSource && window.event_types) {
                 const t = window.event_types;
@@ -332,15 +319,11 @@
                 return;
             }
         } catch (e) {}
-
-        // 方式 3：兜底轮询（每 1.5 秒检查一次角色是否变化）
         setInterval(function () {
             if (!followCharAvatar) return;
             const char = getCurrentCharacter();
             const key = char && char.avatar ? String(char.avatar) : '';
-            if (key && key !== lastAvatarKey) {
-                applyCharBackground(true);
-            }
+            if (key && key !== lastAvatarKey) applyCharBackground(true);
         }, 1500);
     }
 })();
