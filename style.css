@@ -1,4 +1,4 @@
-/* ---------- 悬浮球与面板（保持不变） ---------- */
+/* ---------- 悬浮球与面板 ---------- */
 #my-bg-ball {
     position: fixed; top: 80px; right: 30px; width: 32px; height: 32px;
     border-radius: 8px; display: flex; align-items: center; justify-content: center;
@@ -26,7 +26,7 @@
 
 /* ---------- 头像图层 ---------- */
 #my-bg-avatar-layer {
-    position: fixed; inset: -40px; z-index: 5;
+    position: fixed; inset: -40px; z-index: 2; /* 稍微调高一点，但不影响UI */
     pointer-events: none; opacity: 0; transition: opacity 0.25s ease;
     overflow: hidden; display: none;
 }
@@ -34,10 +34,10 @@
 #my-bg-avatar-layer img { width: 100%; height: 100%; object-fit: cover; object-position: center center; display: block; }
 
 /* ========================================================= */
-/* ---------- 针对 Word 主题的专属覆盖：让白纸透明 ---------- */
+/* ---------- 暴力全美化适配：强行扒光所有图层底色 ---------- */
 /* ========================================================= */
 
-/* 1. 隐藏原生背景和伪元素 */
+/* 1. 干掉所有原生背景层和伪元素 */
 body.my-bg-following #bg1,
 body.my-bg-following #bg_custom,
 body.my-bg-following #bg,
@@ -48,44 +48,51 @@ body.my-bg-following::after {
     opacity: 0 !important; background: none !important; background-image: none !important;
 }
 
-/* 2. 釜底抽薪：把 Word 主题定义的“画布、纸张、聊天气泡”变量全变透明 */
+/* 2. 釜底抽薪：强制覆盖所有影响底色的 CSS 变量（包含 Word 主题和原生变量） */
 body.my-bg-following {
     --wd-canvas: transparent !important;
     --wd-page: transparent !important;
+    --wd-page-shadow: transparent !important;
+    --wd-chrome: transparent !important;
     --SmartThemeBlurTintColor: transparent !important;
     --SmartThemeChatTintColor: transparent !important;
     --SmartThemeUserMesBlurTintColor: transparent !important;
     --SmartThemeBotMesBlurTintColor: transparent !important;
+    background-color: transparent !important;
 }
 
-/* 3. 强制把聊天主容器、气泡等的底色扒光 */
+/* 3. 重拳出击：强制把聊天界面的每一个容器、每一层气泡的背景全部变成透明 */
 body.my-bg-following #sheld,
+body.my-bg-following #sheld > div,
 body.my-bg-following #chat,
 body.my-bg-following #chat > div,
 body.my-bg-following .mes,
 body.my-bg-following .mes_block,
 body.my-bg-following .mes_text,
 body.my-bg-following #form_sheld,
-body.my-bg-following #send_form {
+body.my-bg-following #send_form,
+body.my-bg-following #chat_background {
+    background: transparent !important;
     background-color: transparent !important;
     background-image: none !important;
-    box-shadow: none !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
 }
 
-/* 4. 干掉主容器可能带有的遮罩伪元素 */
+/* 干掉可能由伪元素生成的底纹 */
 body.my-bg-following #sheld::before,
 body.my-bg-following #sheld::after,
 body.my-bg-following #chat::before,
-body.my-bg-following #chat::after {
+body.my-bg-following #chat::after,
+body.my-bg-following .mes::before,
+body.my-bg-following .mes::after {
     display: none !important; background: none !important;
 }
 
 /* ========================================================= */
-/* ---------- 核心体验优化：保证黑字能看清 ---------- */
-/* 因为背景变成了头像图，纯黑字如果没有底会看不清。 */
-/* 这里给正文、用户名、时间等加上微弱的白色发光效果，像 PDF 阅读器那样。 */
+/* ---------- 终极体验：文字白边发光，防瞎眼 ---------- */
+/* 因为背景变成了图片，必须保证各种主题的纯黑或纯白字都能看清 */
 /* ========================================================= */
 body.my-bg-following #chat .mes_text,
 body.my-bg-following #chat .name_text,
@@ -95,11 +102,6 @@ body.my-bg-following #chat .mes_timer,
 body.my-bg-following #chat .tokenCounterDisplay {
     text-shadow: 
         0px 0px 2px rgba(255, 255, 255, 0.95), 
-        0px 0px 4px rgba(255, 255, 255, 0.8), 
-        0px 0px 6px rgba(255, 255, 255, 0.6) !important;
-}
-
-/* 输入框如果也透明了，为了防止打字看不见，给输入框一点点极淡的底色 */
-body.my-bg-following #send_textarea {
-    text-shadow: 0px 0px 4px rgba(255, 255, 255, 0.9) !important;
+        0px 0px 5px rgba(255, 255, 255, 0.8),
+        0px 0px 8px rgba(255, 255, 255, 0.6) !important;
 }
